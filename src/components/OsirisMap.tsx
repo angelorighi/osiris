@@ -434,7 +434,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'gps-jamming'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
 
       // ── FLIGHT ROUTE VISUALIZATION SOURCES & LAYERS ──
@@ -834,6 +834,20 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
       // Route layers are added later (after setMapReady) so they render on top of everything.
 
+      // GPS Jamming — H3 hexagonal cells from the GPSJAM daily heatmap
+      // (gpsjam.org, from ADS-B navigation-accuracy reports). Severity is the
+      // share of aircraft in the cell reporting low accuracy. No
+      // fill-outline-color in MapLibre: a separate line layer draws the edge.
+      const jamColor = ['interpolate',['linear'],['get','severity'], 0,'#F9A825', 2,'#F9A825', 10,'#E65100', 20,'#D32F2F'] as any;
+      map.addLayer({ id: 'jam-hex-fill', type: 'fill', source: 'gps-jamming', paint: {
+        'fill-color': jamColor,
+        'fill-opacity': 0.45,
+      }});
+      map.addLayer({ id: 'jam-hex-line', type: 'line', source: 'gps-jamming', paint: {
+        'line-color': jamColor,
+        'line-width': 1.2, 'line-opacity': 0.8,
+      }});
+
       // Balloons (moving entities)
       map.addLayer({ id: 'balloon-dots', type: 'circle', source: 'balloons', paint: {
         'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,7],
@@ -1144,14 +1158,40 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       </div>`);
     });
 
-    // ── Satellites (SatNOGS powered) ──
+    // ── GPS Jamming hex cells (Polygon geometry — anchor on the centroid) ──
+    map.on('click', 'jam-hex-fill', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const rings = (e.features[0].geometry as any).coordinates as [number, number][][];
+      const ring = rings?.[0] || [];
+      const open = ring.length > 1 ? ring.slice(0, -1) : ring;
+      const coords = open.length
+        ? [
+            open.reduce((s, c) => s + c[0], 0) / open.length,
+            open.reduce((s, c) => s + c[1], 0) / open.length,
+          ]
+        : [0, 0];
+      const sev = Math.round(p.severity ?? 0);
+      const color = sev >= 20 ? '#D32F2F' : sev >= 10 ? '#E65100' : '#F9A825';
+      popup(coords, `<div style="${pStyle}border:1px solid ${color}55;">
+        <div style="color:${color};font-size:14px;font-weight:700;margin-bottom:4px;">GPS JAMMING · ${sev}%</div>
+        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;">H3 cell · ${htmlEsc(p.date || 'daily')} · GPSJAM</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9px;">
+          <div><span style="color:#5C5A54;">LOW-ACCURACY</span><br/><span style="color:#E8E6E0;">${p.low ?? '—'} / ${p.total ?? '—'}</span></div>
+          <div><span style="color:#5C5A54;">COORDS</span><br/><span style="color:#E8E6E0;">${coords[1].toFixed(2)}, ${coords[0].toFixed(2)}</span></div>
+        </div>
+        <div style="font-size:8px;color:#5C5A54;line-height:1.5;margin-top:8px;">Share of aircraft reporting low navigation accuracy, over 24 h. Source: <a href="https://gpsjam.org/" target="_blank" style="color:#F9A825;text-decoration:underline;">GPSJAM</a> — airplanes.live &amp; ADS-B Exchange.</div>
+      </div>`);
+    });
+
+
     // Layers with their own click handlers. The satellite pick defers to
     // these, and to nothing else — the basemap is not a click target.
     const CLICKABLE_LAYERS = new Set(['conflict-icons','cctv-dots','eq-circles','fires-heat',
       'gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots',
       'balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots',
       'sdk-sea','sdk-air','sdk-intel','malware-dots','cyber-heads','gdelt-events-dots',
-      'cf-outage-dots','cf-attack-dots','flight-dots','military-dots','jet-dots','private-dots','alert-pin-dots']);
+      'cf-outage-dots','cf-attack-dots','flight-dots','military-dots','jet-dots','private-dots','alert-pin-dots','jam-hex-fill']);
 
     // Satellites are picked on the GPU: the pick pass runs the same vertex
     // shader as the visible one, so the target is always exactly where the
@@ -1483,7 +1523,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots'].forEach(layer => {
+    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','jam-hex-fill'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -1868,6 +1908,19 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, 2) : []);
     setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
   }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
+
+  // GPS jamming — H3 cells (already closed rings) from the GPSJAM heatmap.
+  useEffect(() => {
+    if (!mapReady) return;
+    const gj = data.gps_jamming;
+    setGeo('gps-jamming', activeLayers.gps_jamming && gj?.cells
+      ? gj.cells.map((c: any) => ({
+          type: 'Feature' as const,
+          geometry: { type: 'Polygon' as const, coordinates: [c.vertices] },
+          properties: { severity: c.severity, low: c.low, total: c.total, date: gj.date || '', source: gj.source || '' },
+        }))
+      : []);
+  }, [mapReady, data.gps_jamming, activeLayers.gps_jamming, setGeo]);
 
   /**
    * Pull the palette out of the document whenever it can have changed.
@@ -2423,6 +2476,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['fl-private'], activeLayers.private);
     setVis(['fl-jets'], activeLayers.jets);
     setVis(['fl-military'], activeLayers.military);
+    setVis(['jam-hex-fill','jam-hex-line'], activeLayers.gps_jamming);
     setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv);
     setVis(['fires-heat'], activeLayers.fires);
     setVis(['weather-glow','weather-dots','weather-label'], activeLayers.weather);

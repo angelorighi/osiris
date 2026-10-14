@@ -91,7 +91,7 @@ export const API_GROUPS: ApiGroup[] = [
         path: '/api/flights',
         method: 'GET',
         summary: 'Live ADS-B aircraft, bucketed by class.',
-        returns: ['commercial_flights', 'private_flights', 'private_jets', 'military_flights', 'source'],
+        returns: ['commercial_flights', 'private_flights', 'private_jets', 'military_flights', 'gps_jamming', 'source'],
         notes:
           'Keyless via adsb.lol. Each bucket is an array; sum them for a total. `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` are reserved for higher rate limits and are not required.',
       },
@@ -101,6 +101,14 @@ export const API_GROUPS: ApiGroup[] = [
         summary: 'Tracked orbital objects with TLE-derived positions.',
         returns: ['satellites', 'total', 'category_counts', 'raw_count', 'timestamp'],
         notes: 'Sourced from celestrak.org. `category_counts` breaks the set down by mission type.',
+      },
+      {
+        path: '/api/gps-jamming',
+        method: 'GET',
+        summary: 'Daily GNSS jamming heatmap (H3 cells) from GPSJAM.',
+        returns: ['date', 'cells', 'source', 'total'],
+        notes:
+          'Built from ADS-B navigation-accuracy reports over 24 h (airplanes.live + ADS-B Exchange), published by gpsjam.org as a merged H3 res-4 grid. `cells` are closed H3 rings with `severity` (GPSJAM\'s percentage of low-accuracy aircraft, 0–100) and `low`/`total` counts. Falls back to the newest non-suspect day and is cached for 30 minutes server-side. Attribution: GPSJAM — data from airplanes.live and ADS-B Exchange.',
       },
       {
         path: '/api/space-weather',

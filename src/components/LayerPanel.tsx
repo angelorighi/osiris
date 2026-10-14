@@ -68,6 +68,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'private', label: 'Private', dataKey: 'private_flights' },
       { key: 'jets', label: 'Private Jets', dataKey: 'private_jets' },
       { key: 'military', label: 'Military', dataKey: 'military_flights' },
+      { key: 'gps_jamming', label: 'GPS Jamming', description: 'GPSJAM · daily H3', dataKey: 'gps_jamming.cells' },
     ],
   },
   {
@@ -258,8 +259,13 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
     let total = 0;
     let found = false;
     for (const k of dk.split(',')) {
-      if (data[k] && Array.isArray(data[k])) {
-        total += data[k].length;
+      /* A key may address a nested array (`gps_jamming.cells`), for payloads
+         that group their rows under a parent object rather than a top level. */
+      const value = k.includes('.')
+        ? k.split('.').reduce<unknown>((node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined), data)
+        : data[k];
+      if (Array.isArray(value)) {
+        total += value.length;
         found = true;
       }
     }

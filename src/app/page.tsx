@@ -157,6 +157,16 @@ const newsTransform = (d: { news?: unknown[]; sources?: unknown[]; timestamp?: s
   alert_pins: (d.news ?? []).filter(n => (n as { place?: unknown } | null)?.place),
 });
 
+/* `/api/flights` still carries a dead `gps_jamming` array from the old NACp
+   detector. The layer now reads `/api/gps-jamming`, which lands on the same
+   `data.gps_jamming` key, so the stale array is dropped here rather than left
+   to clobber the GPSJAM payload whenever both layers are on. */
+const dropFlightJamming = (d: Record<string, unknown>) => {
+  const rest = { ...d };
+  delete rest.gps_jamming;
+  return rest;
+};
+
 /* One version label for the splash and the header, which used to disagree. */
 const APP_VERSION = 'V5.0';
 
@@ -462,6 +472,7 @@ export default function Dashboard() {
     private: false,
     jets: false,
     military: false,
+    gps_jamming: false,
     maritime: true,
     // On from the start: the orbiting fleet around the globe is the first
     // thing the splash lifts onto.
@@ -1034,9 +1045,14 @@ export default function Dashboard() {
     // Flights
     if (activeLayers.flights || activeLayers.military || activeLayers.jets || activeLayers.private) {
       if (!layerFetchedRef.current.has('flights')) {
-        fetchEndpoint('/api/flights');
+        fetchEndpoint('/api/flights', dropFlightJamming);
         layerFetchedRef.current.add('flights');
       }
+    }
+    // GPS Jamming — its own feed (GPSJAM), independent of ADS-B flights.
+    if (activeLayers.gps_jamming && !layerFetchedRef.current.has('gps_jamming')) {
+      fetchEndpoint('/api/gps-jamming', d => ({ gps_jamming: d }));
+      layerFetchedRef.current.add('gps_jamming');
     }
     // Satellites (any satellite sub-layer triggers fetch)
     const anySatLayer = activeLayers.satellites || activeLayers.sat_comms || activeLayers.sat_military || activeLayers.sat_navigation || activeLayers.sat_earth || activeLayers.sat_science;
@@ -1146,7 +1162,13 @@ export default function Dashboard() {
     const intervals: ReturnType<typeof setInterval>[] = [];
     const stopFns: (() => void)[] = [];
     if (activeLayers.flights || activeLayers.military || activeLayers.jets || activeLayers.private) {
-      intervals.push(setInterval(() => fetchEndpoint('/api/flights'), 300000)); // 5 min (was 2 min)
+      intervals.push(setInterval(() => fetchEndpoint('/api/flights', dropFlightJamming), 300000)); // 5 min (was 2 min)
+    }
+
+    /* GPS jamming is a daily snapshot, so an hourly re-read is already more
+       often than the source changes — it exists to pick up the day rollover. */
+    if (activeLayers.gps_jamming) {
+      intervals.push(setInterval(() => fetchEndpoint('/api/gps-jamming', d => ({ gps_jamming: d })), 3600000)); // 1 h
     }
 
     if (activeLayers.balloons) {

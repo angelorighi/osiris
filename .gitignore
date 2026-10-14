@@ -50,6 +50,7 @@ scripts/
 # AI agent config files
 CLAUDE.md
 AGENTS.md
+.kilo/
 
 # Internal dev notes
 DO_NOT_PUSH.md
