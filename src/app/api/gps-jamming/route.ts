@@ -70,7 +70,17 @@ async function latestDate(): Promise<string | null> {
   return null;
 }
 
-let cached: any = null;
+type JamCell = { vertices: [number, number][]; severity: number; low: number; total: number };
+type JamPayload = {
+  date: string | null;
+  cells: JamCell[];
+  source: string;
+  attribution: string;
+  total: number;
+  timestamp: string;
+};
+
+let cached: JamPayload | null = null;
 let cachedAt = 0;
 const CACHE_TTL = 3 * 60 * 60 * 1000; // the source is a daily snapshot
 
@@ -91,7 +101,7 @@ export async function GET() {
 
   const csv = await fetchText(`${DATA_BASE}/${date}-h3_4.csv`);
 
-  const cells: any[] = [];
+  const cells: JamCell[] = [];
   const lines = csv.split('\n');
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
@@ -107,11 +117,12 @@ export async function GET() {
     if (severity <= 0) continue;
     let boundary: [number, number][];
     try {
+      /* formatAsGeoJson=true already yields [lng, lat] pairs — do not swap. */
       boundary = h3.cellToBoundary(hex, true) as [number, number][];
     } catch {
       continue; // unknown/invalid index — skip rather than fail the day
     }
-    const ring = boundary.map(([lat, lng]) => [round4(lng), round4(lat)]);
+    const ring: [number, number][] = boundary.map(([lng, lat]) => [round4(lng), round4(lat)]);
     if (ring.length > 2) {
       const first = ring[0];
       const last = ring[ring.length - 1];
