@@ -499,6 +499,7 @@ export default function Dashboard() {
     terrain_elevation: false,
     malware: false,
     cyber_attacks: false,
+    datacenters: false,
     gdelt_events: false,
     cf_outages: false,
     cf_attacks: false,
@@ -1128,6 +1129,12 @@ export default function Dashboard() {
     // GDELT 2.0 geocoded events
     if ((activeLayers as any).gdelt_events) {
       loadLayerOnce('gdelt_events', '/api/gdelt-events?limit=600', d => ({ gdelt_events: d.events }));
+    }
+
+    // Datacenter facilities (ATLAS / data-center-map.com) — one request, no polling:
+    // the dataset changes on the order of weeks and the route caches for an hour.
+    if ((activeLayers as any).datacenters) {
+      loadLayerOnce('datacenters', '/api/datacenters', d => ({ datacenters: d.facilities }));
     }
 
     // Cloudflare Radar — one request backs both layers

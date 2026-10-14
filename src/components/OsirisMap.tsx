@@ -434,7 +434,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'datacenters'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
 
       // ── FLIGHT ROUTE VISUALIZATION SOURCES & LAYERS ──
@@ -588,6 +588,23 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         'text-field': ['get','malware'], 'text-size': 9, 'text-font': ['JetBrains Mono Bold', 'Open Sans Bold'],
         'text-offset': [0, 1.5], 'text-max-width': 10, 'text-allow-overlap': false,
       }, paint: { 'text-color': '#333333', 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.85 }});
+
+      /* ══ DATACENTERS — ATLAS facilities at their city-level coordinate ══
+         Electric cyan keeps these distinct from the malware (crimson) and
+         botnet C2 (orange) layers already in NETWORK INTEL. */
+      map.addLayer({ id: 'datacenters-glow', type: 'circle', source: 'datacenters', paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 1,8, 5,14, 10,22],
+        'circle-color': '#00E5FF', 'circle-opacity': 0.06, 'circle-blur': 1,
+      }});
+      map.addLayer({ id: 'datacenters-dots', type: 'circle', source: 'datacenters', paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 1,3, 5,5, 10,8],
+        'circle-color': '#00E5FF', 'circle-opacity': 0.9,
+        'circle-stroke-width': 1, 'circle-stroke-color': '#000000', 'circle-stroke-opacity': 0.8,
+      }});
+      map.addLayer({ id: 'datacenters-label', type: 'symbol', source: 'datacenters', minzoom: 4, layout: {
+        'text-field': ['get','name'], 'text-size': 9, 'text-font': ['JetBrains Mono Bold', 'Open Sans Bold'],
+        'text-offset': [0, 1.5], 'text-max-width': 12, 'text-allow-overlap': false,
+      }, paint: { 'text-color': '#00E5FF', 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.85 }});
 
       map.addLayer({ id: 'gdelt-dots', type: 'circle', source: 'gdelt', paint: {
         'circle-radius': 4, 'circle-color': '#D32F2F', 'circle-opacity': 0.5, 'circle-stroke-width': 1, 'circle-stroke-color': '#D32F2F', 'circle-stroke-opacity': 0.25,
@@ -1151,7 +1168,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       'gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots',
       'balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots',
       'sdk-sea','sdk-air','sdk-intel','malware-dots','cyber-heads','gdelt-events-dots',
-      'cf-outage-dots','cf-attack-dots','flight-dots','military-dots','jet-dots','private-dots','alert-pin-dots']);
+      'cf-outage-dots','cf-attack-dots','flight-dots','military-dots','jet-dots','private-dots','alert-pin-dots','datacenters-dots']);
 
     // Satellites are picked on the GPU: the pick pass runs the same vertex
     // shader as the visible one, so the target is always exactly where the
@@ -1482,8 +1499,39 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       </div>`);
     });
 
+    /* ── Datacenters (ATLAS facilities) ──
+       Every field below is read off the facility row. The marker sits at the
+       city-level coordinate the source reports — ATLAS publishes nothing more
+       precise, and no position is invented for rows it gives no fix for. */
+    map.on('click', 'datacenters-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      const c = '#00E5FF';
+      const where = [p.city, p.state, p.country].filter(Boolean).join(', ');
+      const row = (label: string, value: string, color = '#E8E6E0', mono = false) =>
+        `<div><span style="color:#5C5A54;font-size:7px;letter-spacing:0.1em;">${label}</span><br/><span style="color:${color};${mono ? 'font-family:monospace;' : ''}">${value}</span></div>`;
+      popup(coords, `<div style="${pStyle}border:1px solid ${c}40;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${c}30;padding-bottom:6px;margin-bottom:8px;">
+          <div style="color:${c};font-size:12px;font-weight:700;letter-spacing:0.12em;">DATACENTER</div>
+          <div style="font-size:8px;padding:2px 6px;border-radius:3px;font-weight:700;letter-spacing:0.1em;background:${c}20;color:${c};border:1px solid ${c}50;">FACILITY</div>
+        </div>
+        <div style="color:#E8E6E0;font-size:11px;font-weight:bold;margin-bottom:4px;">${htmlEsc(p.name || 'Unnamed facility')}</div>
+        ${where ? `<div style="font-size:9px;color:#8A8880;margin-bottom:10px;">${htmlEsc(where)}</div>` : ''}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;background:rgba(0,0,0,0.35);padding:8px;border-radius:4px;border:1px solid rgba(255,255,255,0.04);">
+          ${row('OPERATOR', htmlEsc(p.operator || 'Not reported'))}
+          ${row('CITY / COUNTRY', htmlEsc(where || 'Not reported'))}
+          ${row('STATE / ZIP', htmlEsc([p.state, p.zip].filter(Boolean).join(' ') || 'Not reported'))}
+          ${row('COORDINATES', `${Number(p.lat).toFixed(4)}, ${Number(p.lng).toFixed(4)}`, '#FFD600', true)}
+        </div>
+        ${p.address ? `<div style="font-size:9px;color:#8A8880;margin-bottom:8px;font-family:monospace;word-break:break-all;">${htmlEsc(p.address)}</div>` : ''}
+        <div style="font-size:8px;color:#5C5A54;line-height:1.5;margin-bottom:8px;">City-level location from the ATLAS open dataset. No exact coordinate is published for this facility.</div>
+        <div style="font-size:7px;color:#5C5A54;text-align:center;letter-spacing:0.1em;">SOURCE: <a href="${urlSafe(p.source_url || 'https://data-center-map.com/')}" target="_blank" style="color:${c};text-decoration:underline;">ATLAS DATA CENTER MAP ↗</a></div>
+      </div>`);
+    });
+
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots'].forEach(layer => {
+    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','datacenters-dots'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -2184,6 +2232,35 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setGeo('cyber-heads', dots);
   }, [mapReady, (activeLayers as any).cyber_attacks, data.cyber_attacks, setGeo]);
 
+  /* ══ DATACENTERS — ATLAS facilities ══
+     One marker per facility, at the city-level coordinate the source publishes.
+     A row ATLAS gives no fix for was dropped upstream by the parser, so there
+     is nothing here to place at an invented location. */
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const al = activeLayers as any;
+    const facilities = data.datacenters;
+
+    if (!al.datacenters || !facilities?.length) {
+      setGeo('datacenters', []);
+      return;
+    }
+
+    const dots = facilities
+      .filter((f: any) => typeof f.lng === 'number' && typeof f.lat === 'number')
+      .map((f: any) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [f.lng, f.lat] },
+        properties: {
+          id: f.id, name: f.name, operator: f.operator, city: f.city,
+          state: f.state, country: f.country, address: f.address, zip: f.zip,
+          lat: f.lat, lng: f.lng,
+        },
+      }));
+
+    setGeo('datacenters', dots);
+  }, [mapReady, (activeLayers as any).datacenters, data.datacenters, setGeo]);
+
 
 
   useEffect(() => {
@@ -2418,6 +2495,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['malware-glow','malware-dots','malware-label','malware-new-ring'], activeLayers.malware);
     setVis(['network-mesh-atmo', 'network-mesh-glow', 'network-mesh-core'], activeLayers.internet_outages || activeLayers.malware);
     setVis(['cyber-heads','cyber-labels'], (activeLayers as any).cyber_attacks);
+    setVis(['datacenters-glow','datacenters-dots','datacenters-label'], (activeLayers as any).datacenters);
     setVis(['day-night-fill'], activeLayers.day_night);
     setVis(['fl-commercial'], activeLayers.flights);
     setVis(['fl-private'], activeLayers.private);
